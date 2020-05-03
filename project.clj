@@ -1,5 +1,5 @@
 (defproject skazka "0.1.0-SNAPSHOT"
-  :description "Apache Kafka codec for clojure"
+  :description "Apache Kafka proxy in clojure"
   :url "https://github.com/yonatane/skazka"
   :license {:name "MIT License"}
   :dependencies [[org.clojure/clojure "1.10.1"]]

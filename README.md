@@ -1,6 +1,6 @@
 # skazka
 
-Apache Kafka codec for clojure
+Apache Kafka proxy in clojure
 
 ## License
 
