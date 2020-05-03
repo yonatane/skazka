@@ -1,1 +1,2 @@
-(ns skazka.dev)
+(ns skazka.dev
+  (:require [skazka.net]))

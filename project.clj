@@ -2,7 +2,14 @@
   :description "Apache Kafka proxy in clojure"
   :url "https://github.com/yonatane/skazka"
   :license {:name "MIT License"}
-  :dependencies [[org.clojure/clojure "1.10.1"]]
+  :dependencies [[org.clojure/clojure "1.10.1"]
+                 [io.netty/netty-buffer "4.1.49.Final"]
+                 [io.netty/netty-common "4.1.49.Final"]
+                 [io.netty/netty-handler "4.1.49.Final"]
+                 [io.netty/netty-transport "4.1.49.Final"]
+                 [funcool/octet "1.1.2"]
+                 [com.taoensso/timbre "4.10.0"]
+                 [com.fzakaria/slf4j-timbre "0.3.19"]]
   :profiles {:dev {:source-paths ["dev"]
                    :dependencies [[org.clojure/tools.namespace "1.0.0"]
                                   [criterium "0.4.5"]
