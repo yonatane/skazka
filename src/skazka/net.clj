@@ -1,5 +1,6 @@
 (ns skazka.net
   (:require [taoensso.timbre :as timbre]
+            [bytegeist.bytegeist :as g]
             [skazka.api-keys :as api-keys]
             [skazka.protocol :as proto])
   (:import (io.netty.channel.nio NioEventLoopGroup)
@@ -14,6 +15,14 @@
            (java.nio ByteBuffer)
            (org.apache.kafka.common.message MetadataResponseData ResponseHeaderData)
            (org.apache.kafka.common.protocol ByteBufferAccessor)))
+
+(defn read-and-reset
+  [^ByteBuf b f]
+  (.markReaderIndex b)
+  (try
+    (f)
+    (finally
+      (.resetReaderIndex b))))
 
 (defn ->attribute-key
   [k]
@@ -68,7 +77,7 @@
       [^ChannelHandlerContext ctx ^ByteBuf b]
       (let [^Deque q (get-attribute front-ch :q)
             req-header (.remove q)
-            [n res-header] (proto/read-res-header+ b)
+            res-header (read-and-reset b #(proto/read-res-header+ b))
             correlated (= (:correlation-id req-header)
                           (:correlation-id res-header))
             _ (debug-response req-header res-header correlated)
@@ -83,7 +92,7 @@
                       ;rh (ResponseHeaderData. bba (short 1))
                       ;mr (MetadataResponseData. bba (short 9))
 
-                      [_ metadata+] (proto/read-metadata-res+ b)
+                      metadata+ (read-and-reset b #(proto/read-metadata-res+ b))
                       metadata (:res metadata+)
                       _ (timbre/info "\nMETADATA:" metadata)
                       proxy-brokers [{:node-id 0
@@ -94,24 +103,28 @@
                       new-meta (assoc metadata :brokers proxy-brokers)
 
                       _ (timbre/info "\nOVERRIDE METADATA:" new-meta)
-                      new-meta-length (proto/metadata-res-size new-meta)
-                      new-meta+ {:frame-length new-meta-length
-                                 :res new-meta}
 
-                      total-length (+ 4 new-meta-length)
-                      ^ByteBuf b' (Unpooled/buffer total-length total-length)
-                      wrote (int (proto/write-metadata-res+! b' new-meta+))
-                      _ (.writerIndex b' wrote)
+                      ^ByteBuf b' (Unpooled/buffer)
+                      ;; Make room for length-field:
+                      _ (.ensureWritable b' 4)
+                      ;; Save the length-field index for later because we don't know the length yet:
+                      length-field-index (.writerIndex b')
+                      ;; Write the data after the length-field:
+                      _ (.writerIndex b' (+ 4 (.writerIndex b')))
+                      _ (g/write proto/metadata-res-v9 b' new-meta) ;TODO buffer as first arg migtht be better.
+                      ;; Set the length-field without changing the writerIndex
+                      new-length (- (.readableBytes b') 4)
+                      _ (.setInt b' length-field-index new-length)]
 
-                      ; Debug writing
-                      ;^ByteBuffer nb (.nioBuffer b')
-                      ;fl (.getInt nb)
-                      ;^ByteBufferAccessor bba (ByteBufferAccessor. nb)
-                      ;rh (ResponseHeaderData. bba (short 1))
-                      ;mr (MetadataResponseData. bba (short 9))
-                      ]
-                  b')))
-            ]
+                  ; Debug writing
+                  ;^ByteBuffer nb (.nioBuffer b')
+                  ;fl (.getInt nb)
+                  ;^ByteBufferAccessor bba (ByteBufferAccessor. nb)
+                  ;rh (ResponseHeaderData. bba (short 1))
+                  ;mr (MetadataResponseData. bba (short 9))
+
+                  b')))]
+
 
         (-> front-ch
             (.writeAndFlush (or b' b))
@@ -130,8 +143,7 @@
     (exceptionCaught
       [^ChannelHandlerContext ctx ^Throwable cause]
       (timbre/error cause "Exception in back-handler")
-      (close-on-flush (.channel ctx)))
-    ))
+      (close-on-flush (.channel ctx)))))
 
 (defn back-initializer
   [^Channel front-ch]
@@ -151,11 +163,11 @@
             (.group (.eventLoop front-ch))
             (.channel (class front-ch))
             (.handler (back-initializer front-ch))
-            (.option ChannelOption/AUTO_READ false) ; for backpressure
-            ;(.option ChannelOption/AUTO_CLOSE false)
-            ;(.option ChannelOption/SO_KEEPALIVE true)
-            ;(.option ChannelOption/TCP_NODELAY true)
-            )
+            (.option ChannelOption/AUTO_READ false)) ; for backpressure
+        ;(.option ChannelOption/AUTO_CLOSE false)
+        ;(.option ChannelOption/SO_KEEPALIVE true)
+        ;(.option ChannelOption/TCP_NODELAY true)
+
         ch-f (.connect b back-host (int back-port))
         back-ch (.channel ch-f)]
     (.addListener ch-f (proxy [ChannelFutureListener] []
@@ -188,7 +200,7 @@
       (let [^Channel front-ch (.channel ctx)
             ^Channel back-ch (get-attribute front-ch :back-ch)
             ^Deque q (get-attribute front-ch :q)
-            [n req-header] (proto/read-req-header+ msg)]
+            req-header (read-and-reset msg #(proto/read-req-header+ msg))]
 
         (timbre/info "\nCLIENT REQUEST HEADER:" req-header)
         (.add q req-header)
@@ -214,8 +226,7 @@
     (exceptionCaught
       [^ChannelHandlerContext ctx ^Throwable cause]
       (timbre/error cause "Exception in front-handler")
-      (close-on-flush (.channel ctx)))
-    ))
+      (close-on-flush (.channel ctx)))))
 
 (defn front-initializer
   [back-host back-port]
@@ -240,11 +251,11 @@
                 (.channel NioServerSocketChannel)
                 (.handler (LoggingHandler. LogLevel/INFO))
                 (.childHandler (front-initializer back-host back-port))
-                (.childOption ChannelOption/AUTO_READ false) ; for backpressure
-                ;(.childOption ChannelOption/AUTO_CLOSE false)
-                ;(.childOption ChannelOption/SO_KEEPALIVE true)
-                ;(.childOption ChannelOption/TCP_NODELAY true)
-                )
+                (.childOption ChannelOption/AUTO_READ false)) ; for backpressure
+            ;(.childOption ChannelOption/AUTO_CLOSE false)
+            ;(.childOption ChannelOption/SO_KEEPALIVE true)
+            ;(.childOption ChannelOption/TCP_NODELAY true)
+
             ch (-> b (.bind (int listen-port)) (.sync) (.channel))
             sync-f #(-> ch (.closeFuture) (.sync))]
         {:ch ch

@@ -7,7 +7,7 @@
                  [io.netty/netty-common "4.1.49.Final"]
                  [io.netty/netty-handler "4.1.49.Final"]
                  [io.netty/netty-transport "4.1.49.Final"]
-                 [funcool/octet "1.1.2"]
+                 [bytegeist "0.1.0-SNAPSHOT"]
                  [com.taoensso/timbre "4.10.0"]
                  [com.fzakaria/slf4j-timbre "0.3.19"]]
   :profiles {:dev {:source-paths ["dev"]
