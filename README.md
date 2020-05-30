@@ -2,6 +2,10 @@
 
 Apache Kafka proxy in clojure
 
+WIP
+
+Provides visibility into the kafka protocol
+
 ```clojure
 ; In REPL:
 (def x (skazka.net/start-proxy))
