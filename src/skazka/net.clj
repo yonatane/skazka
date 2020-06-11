@@ -82,50 +82,20 @@
                           (:correlation-id res-header))
             _ (debug-response req-header res-header correlated)
 
-            b'
-            (when correlated
-              (when (= :metadata (-> req-header :api-key api-keys/->keyword))
-                (let [; Debug read
-                      ;^ByteBuffer nb (.nioBuffer b)
-                      ;fl (.getInt nb)
-                      ;^ByteBufferAccessor bba (ByteBufferAccessor. nb)
-                      ;rh (ResponseHeaderData. bba (short 1))
-                      ;mr (MetadataResponseData. bba (short 9))
-
-                      metadata+ (read-and-reset b #(proto/read-metadata-res+ b))
-                      metadata (:res metadata+)
-                      _ (timbre/info "\nMETADATA:" metadata)
-                      proxy-brokers [{:node-id 0
-                                      :host "localhost"
-                                      :port 9999
-                                      :rack nil
-                                      :tagged-fields nil}]
-                      new-meta (assoc metadata :brokers proxy-brokers)
-
-                      _ (timbre/info "\nOVERRIDE METADATA:" new-meta)
-
-                      ^ByteBuf b' (Unpooled/buffer)
-                      ;; Make room for length-field:
-                      _ (.ensureWritable b' 4)
-                      ;; Save the length-field index for later because we don't know the length yet:
-                      length-field-index (.writerIndex b')
-                      ;; Write the data after the length-field:
-                      _ (.writerIndex b' (+ 4 (.writerIndex b')))
-                      _ (g/write proto/metadata-res-v9 b' new-meta) ;TODO buffer as first arg migtht be better.
-                      ;; Set the length-field without changing the writerIndex
-                      new-length (- (.readableBytes b') 4)
-                      _ (.setInt b' length-field-index new-length)]
-
-                  ; Debug writing
-                  ;^ByteBuffer nb (.nioBuffer b')
-                  ;fl (.getInt nb)
-                  ;^ByteBufferAccessor bba (ByteBufferAccessor. nb)
-                  ;rh (ResponseHeaderData. bba (short 1))
-                  ;mr (MetadataResponseData. bba (short 9))
-
-                  b')))]
-
-
+            b' (when correlated
+                 (when (= :metadata (-> req-header :api-key api-keys/->keyword))
+                   (let [metadata (read-and-reset b #(proto/read-metadata-res b))
+                         _ (timbre/info "\nMETADATA:" metadata)
+                         proxy-brokers [{:node-id 0
+                                         :host "localhost"
+                                         :port 9999
+                                         :rack nil
+                                         :tagged-fields nil}]
+                         new-meta (assoc metadata :brokers proxy-brokers)
+                         _ (timbre/info "\nOVERRIDE METADATA:" new-meta)
+                         b' (Unpooled/buffer)
+                         _ (g/write proto/metadata-res-v9 b' new-meta)]
+                     b')))]
         (-> front-ch
             (.writeAndFlush (or b' b))
             (.addListener (proxy [ChannelFutureListener] []

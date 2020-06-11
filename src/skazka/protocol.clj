@@ -79,7 +79,7 @@
            [:tagged-fields tagged-fields]]))
 
 (def metadata-res-v9
-  (g/spec [:map
+  (g/spec [:map {:length-based-frame frame-length}
            [:correlation-id :int32]
            [:header-tagged-fields tagged-fields]
            [:throttle-time-ms :int32]
@@ -90,16 +90,11 @@
            [:cluster-authorized-operations :int32]
            [:tagged-fields tagged-fields]]))
 
-(def metadata-res-v9+
-  (g/spec [:map
-           [:frame-length frame-length]
-           [:res metadata-res-v9]]))
-
 (defn read-req-header+ [b]
   (g/read req-header+ b))
 
 (defn read-res-header+ [b]
   (g/read res-header+ b))
 
-(defn read-metadata-res+ [b]
-  (g/read metadata-res-v9+ b))
+(defn read-metadata-res [b]
+  (g/read metadata-res-v9 b))
