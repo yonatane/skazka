@@ -57,11 +57,6 @@
         length-field-length 4] ;int32
     (LengthFieldBasedFrameDecoder. max-frame-length length-field-offset length-field-length)))
 
-(defn debug-response [req-header res-header correlated]
-  (timbre/info "\nBROKER RESPONSE HEADER:" res-header
-               "\nCORRELL REQUEST HEADER:" req-header
-               "\nCORRELATED:" correlated))
-
 (defn back-handler
   "Handles the connection to the back host.
   Writes the received data from back host to the proxy client through front-ch."
@@ -80,8 +75,9 @@
             res-header (read-and-reset b #(proto/read-res-header+ b))
             correlated (= (:correlation-id req-header)
                           (:correlation-id res-header))
-            _ (debug-response req-header res-header correlated)
-
+            _ (timbre/debug "\nBROKER RESPONSE HEADER:" res-header
+                            "\nCORRELL REQUEST HEADER:" req-header
+                            "\nCORRELATED:" correlated)
             b' (when correlated
                  (when (= :metadata (-> req-header :api-key api-keys/->keyword))
                    (let [metadata (read-and-reset b #(proto/read-metadata-res b))
@@ -102,7 +98,7 @@
                             (operationComplete
                               [^ChannelFuture ch-f]
                               (if (.isSuccess ch-f)
-                                (do (timbre/info "\nWROTE TO FRONT") ;Writing to client succeeded, read more from back.
+                                (do (timbre/debug "\nWROTE TO FRONT") ;Writing to client succeeded, read more from back.
                                     (.read (.channel ctx)))
                                 (do (timbre/error "\nERROR WRITING TO FRONT, CLOSING")
                                     (-> ch-f .channel .close)))))))))
@@ -144,7 +140,7 @@
                          (operationComplete
                            [^ChannelFuture ch-f]
                            (if (.isSuccess ch-f)
-                             (do (timbre/info "\nCONNECTED TO BACK")
+                             (do (timbre/debug "\nCONNECTED TO BACK")
                                  (.read front-ch)) ;read first data
                              (do (timbre/error "\nERROR CONNECT TO BACK.")
                                  (.close front-ch))))))
@@ -182,7 +178,7 @@
                               (operationComplete
                                 [^ChannelFuture ch-f]
                                 (if (.isSuccess ch-f)
-                                  (do (timbre/info "\nDELEGATED TO BACK")
+                                  (do (timbre/debug "\nDELEGATED TO BACK")
                                       (.read front-ch)) ;Writing to back succeeded, read more from client.
                                   (do (timbre/error "\nERRER DELEGATING TO BACK")
                                       (-> ch-f .channel .close))))))))))
@@ -203,7 +199,7 @@
   (proxy [ChannelInitializer] []
     (initChannel [^Channel ch]
       (let [handlers (channel-handlers-array
-                       (LoggingHandler. LogLevel/INFO)
+                       (LoggingHandler. LogLevel/DEBUG)
                        (frame-decoder)
                        (front-handler back-host back-port))]
         (-> ch
@@ -219,7 +215,7 @@
             b (doto (ServerBootstrap.)
                 (.group boss-group worker-group)
                 (.channel NioServerSocketChannel)
-                (.handler (LoggingHandler. LogLevel/INFO))
+                (.handler (LoggingHandler. LogLevel/DEBUG))
                 (.childHandler (front-initializer back-host back-port))
                 (.childOption ChannelOption/AUTO_READ false)) ; for backpressure
             ;(.childOption ChannelOption/AUTO_CLOSE false)
@@ -239,6 +235,7 @@
 
 (defn start-proxy
   []
+  (timbre/set-level! :info)
   (let [listen-port 9999
         back-host "localhost"
         back-port 9092]
