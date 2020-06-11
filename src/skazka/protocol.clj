@@ -2,9 +2,13 @@
   (:require [bytegeist.bytegeist :as g]))
 
 (def compact-string
+  "String with unsigned varint length delimiter set to N+1 (N is number of bytes).
+  N=0 means empty string \"\". N=-1 means nil"
   (g/spec [:string :uvarint32 1]))
 
 (defn compact-array
+  "Array with unsigned varint length delimiter set to N+1 (N is number of items).
+  N=0 means empty vector `[]`. N=-1 means nil"
   [s]
   (g/spec [:vector :uvarint32 s 1]))
 
